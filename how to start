@@ -1,0 +1,25 @@
+لكي تبدأ ببساطة:
+أولًا، قم بشراء شاشة.
+ثانيًا، حدد أطراف الطاقة وإضاءة الشاشة (LED) كما شرحت سابقًا.
+ثالثًا، هنا أستخدم المتحكم STM32F103، لذا ستقوم برفع الكود باستخدام Arduino.
+تأكد من ضبط نوع متحكم الشاشة في الكود بشكل صحيح.
+
+بعد ذلك، ركز على مخرجات الكود حتى تبدأ الشاشة في إظهار لون أحمر مثلًا، أو أي لون آخر وفقًا لما هو محدد في الكود.
+في بعض الأحيان، نظرًا لأن الشاشة قد تكون تعمل بنظام RGB أو BGR، فإن ترتيب الألوان قد يختلف.
+المهم، عندما يظهر اللون، فهذا يعني أن هذه المحاولة صحيحة.
+
+حاليًا، الكود ليس ذكيًا بما يكفي لتحديد ما إذا كانت الشاشة تعمل بشكل صحيح أم لا، لذلك من الطبيعي أن يتم العمل على تطوير كود أكثر كفاءة، مع أسلوب تحكم أفضل.
+
+
+
+To start simply:
+First, buy a display.
+Second, identify the power and LED pins as I explained earlier.
+Third, I am using the STM32F103 microcontroller here, so you will upload the code using Arduino.
+Make sure to set the correct display controller type in the code.
+
+Then, focus on the code output until the screen starts displaying a red color, for example, or any other color as specified in the code.
+Sometimes, since the display might use RGB or BGR, the color order may differ.
+The important thing is that when the color appears, this means the attempt was correct.
+
+Currently, the code is not smart enough to determine whether the display is working perfectly or not. Therefore, improving the code and developing a better control method is in progress.
