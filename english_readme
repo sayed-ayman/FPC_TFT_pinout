@@ -1,0 +1,71 @@
+Now, the most important question: What did I do to reach this point?
+
+The journey began with purchasing a Chinese phone, disassembling it, and then performing reverse engineering on it. At first, the process seemed easy, but the real challenge was the cost and the overwhelming number of screens with various sizes available in the market. This necessitated finding an alternative solution.
+The Alternative Solution: DZKJ Schematics Software
+
+I found a program called DZKJ Schematics, which offers a free 7-day trial. This period was more than enough for my needs. However, as the Egyptian proverb goes: "The hawk does not throw chicks."
+
+I discovered that all the available phones in the software were from only two companies, and the selection was quite limited. Still, I managed to extract useful information regarding screens with 37 pins and 16 pins.
+
+However, another issue arose: even within these categories, there is no standardized specification—it was complete chaos. For example, a 37-pin screen could be configured to use either SPI or RGB protocol. Some models support RGB only, while others have a completely different pin arrangement.
+Testing Screens and Results
+
+After extensive testing, I successfully ran two out of three different 37-pin screens, as well as two 16-pin screens. The question then became: What’s next?
+
+This method was not efficient enough. I needed to step back and conduct a more thorough investigation. I realized that to avoid screens using the RGB protocol, they should have fewer than 20 pins.
+How Did I Reach This Conclusion?
+
+Simply put, after extensive research on Alibaba and various mobile phone repair programs, I found that most screens with 20, 22, or 24 pins use the RGB protocol. Thus, I narrowed my focus to screens with 11 to 18 pins.
+Identifying SPI Screen Specifications
+
+From my research, I found that screens using the SPI protocol typically have the following pins:
+
+    CS (Chip Select)
+    DC (Data/Command)
+    SCK (Serial Clock)
+    MOSI (Master Out Slave In)
+    RESET (Reset)
+    T/E (Optional)
+
+We only need 5 out of these 6 pins to operate the screen, along with:
+
+    GND (Ground)
+    VCC (Power Supply)
+    IOVCC (Input/Output Voltage)
+    LED+ and LED- (Backlight Power)
+
+How to Easily Identify Power Pins?
+
+If you closely examine the connection cable, you’ll always find that power-related pins are thicker than the others—as shown in the attached images.
+Filtering the Pins and Identifying the Remaining Ones
+
+After eliminating all known pins, I was usually left with six unidentified pins—which I needed to test. So, I wrote a custom script to automatically detect their arrangement.
+
+Unfortunately, my original code was a complete spaghetti mess 😅. But thanks to ChatGPT, I was able to improve it significantly. Now, I have two versions of the code:
+
+    A version written entirely in C
+    A version with some parts written in Assembly to make execution faster
+
+Performance Improvement
+
+Initially, the script took 24 minutes to complete, but after the optimizations, it now takes no more than 6 minutes!
+Testing Results
+
+I’ve attached images showing the screens that worked successfully and those that didn’t. I believe the main reason some screens failed is that their internal controller is not supported by the library I used.
+
+However, I noticed that most screens generally use one of the following controllers:
+
+    ST7735
+    ST7789
+    ILI9481
+
+A Quick Guide to Identifying the Right Controller
+
+    Screens smaller than 2 inches mostly use the ST7735 controller.
+    Screens larger than 2.4 inches mostly use the ST7789 controller.
+
+Surprise: Some screens work even if you change the controller! I came across a screen that functioned perfectly with three different controllers or more without any issues!
+
+Welcome to China, my friend! 😅
+
+This is just the beginning—many surprises are on the way! 🚀
