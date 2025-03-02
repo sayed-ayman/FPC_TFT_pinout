@@ -7,9 +7,13 @@
 
 
 #include <Arduino_GFX_Library.h>
-#include "stm32f1xx.h"  // STM32F103 HAL definitions
 
-#define GFX_BL DF_GFX_BL // Default backlight pin
+//This library is not mine. Here is the link for more information:
+
+//https://github.com/moononournation/Arduino_GFX/wiki
+
+//**********************************************************************************************
+#include "stm32f1xx.h"  // STM32F103 HAL definitions
 
 // Pin definitions
 const uint8_t pins[] = {PA1, PA2, PA3, PA4, PA5, PA7};
@@ -53,6 +57,7 @@ void tryCombination(uint8_t rst, uint8_t dc, uint8_t cs, uint8_t sck, uint8_t mo
     serialPrint(numStr);
 
     Arduino_DataBus *bus = new Arduino_SWSPI(dc, cs, sck, mosi, GFX_NOT_DEFINED);
+  ///////////////////////////////////////////////////////////////////////////// LCD MCU //////////////////////////////////////////
     gfx = new Arduino_ST7735(bus, rst, 0);
 
     if (gfx->begin()) {
