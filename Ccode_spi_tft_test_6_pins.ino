@@ -9,6 +9,12 @@
 
 #include <Arduino_GFX_Library.h>
 
+//This library is not mine. Here is the link for more information:
+
+//https://github.com/moononournation/Arduino_GFX/wiki
+
+//**********************************************************************************************
+
 // Pin group definitions (adding PA3)
 const uint8_t pins[] = {PA1, PA2, PA3, PA4, PA5, PA7}; // Symbolic pin names used directly
 const char *pinNames[] = {"PA1", "PA2", "PA3", "PA4", "PA5", "PA7"}; // Human-readable names
@@ -37,6 +43,7 @@ void tryCombination(uint8_t rst, uint8_t dc, uint8_t cs, uint8_t sck, uint8_t mo
     Serial.println(mosiName);
 
     Arduino_DataBus *bus = new Arduino_SWSPI(dc, cs, sck, mosi, GFX_NOT_DEFINED /* MISO */);
+  ///////////////////////////////////////////////////////////////// LCD MCU /////////////////////////////////////////////
     gfx = new Arduino_ST7735(bus, rst, 0 /* rotation */);
 
     if (gfx->begin())
