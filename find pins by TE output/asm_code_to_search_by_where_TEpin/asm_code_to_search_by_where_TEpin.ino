@@ -3,7 +3,7 @@
 // دالة تأخير دقيق لمدة 100 ملي ثانية باستخدام ASM
 void delay_100ms() {
     __asm__ volatile (
-        "mov r0, #50000 \n" /* تقسيم التأخير إلى عدة دورات أصغر */ 
+        "mov r0, #50000 \n" 
         "delay_loop_A: subs r0, r0, #1 \n"
         "bne delay_loop_A \n"
         ::: "r0"
@@ -55,37 +55,38 @@ const char* controllers[] = {
     "SSD1331",   // شاشة OLED، دقة 96×64، تدعم SPI
     "SSD1351"    // شاشة OLED، دقة 128×128، ألوان جميلة جدًا
 };
-
-// مصفوفة لتحديد المتحكمات المفعلة
 bool enabledControllers[sizeof(controllers) / sizeof(controllers[0])];
 
-// عدد المحاولات الإجمالي
-int total_attempts = 0;
-int current_attempt = 0;
+// عدد المحاولات
+int total_attempts = 0, current_attempt = 0;
 
 // متغيرات التوصيل
-uint8_t MOSI_PIN, SCK_PIN, DC_PIN, RESET_PIN, TE_PIN;
+uint8_t MOSI_PIN, SCK_PIN, DC_PIN, CS_PIN, RESET_PIN, TE_PIN;
 volatile bool TE_Flag = false;
 
-// وظيفة المقاطعة عند استقبال TE Signal
+// دالة المقاطعة لاستقبال TE Signal
 void TE_ISR() {
     TE_Flag = true;
 }
 
-// إرسال أمر عبر SPI
-void LCD_SendCommand(uint8_t cmd) {
-    SPI.beginTransaction(spiSettings);
-    digitalWrite(DC_PIN, LOW);
-    SPI.transfer(cmd);
-    SPI.endTransaction();
+// دالة لإرسال 9 بت عبر SPI باستخدام وضع 16-bit
+void sendSPI9(uint16_t data) {
+    while (!(SPI1->SR & SPI_SR_TXE)); // انتظار جاهزية SPI
+    SPI1->DR = data & 0x01FF; // إرسال 9 بت داخل 16 بت
 }
 
-// إرسال بيانات عبر SPI
+// إرسال أمر (DC=0)
+void LCD_SendCommand(uint8_t cmd) {
+    digitalWrite(CS_PIN, LOW);
+    sendSPI9(cmd & 0xFF); // إرسال الأمر
+    digitalWrite(CS_PIN, HIGH);
+}
+
+// إرسال بيانات (DC=1)
 void LCD_SendData(uint8_t data) {
-    SPI.beginTransaction(spiSettings);
-    digitalWrite(DC_PIN, HIGH);
-    SPI.transfer(data);
-    SPI.endTransaction();
+    digitalWrite(CS_PIN, LOW);
+    sendSPI9(0x100 | (data & 0xFF)); // إرسال البيانات مع DC=1
+    digitalWrite(CS_PIN, HIGH);
 }
 
 // إعادة تشغيل الشاشة
@@ -99,6 +100,24 @@ void LCD_Reset() {
 // تهيئة الشاشة
 void LCD_Init(const char* controller) {
     LCD_Reset();
+
+    if (strcmp(controller, "ILI9341") == 0) {
+        LCD_SendCommand(0x11); delay_100ms(); // Sleep Out
+        LCD_SendCommand(0x3A); LCD_SendData(0x55); // 16-bit color
+        LCD_SendCommand(0x36); LCD_SendData(0x48);
+        LCD_SendCommand(0x29); // Display ON
+    } else if (strcmp(controller, "ST7789") == 0) {
+        LCD_SendCommand(0x11); delay_100ms();
+        LCD_SendCommand(0x3A); LCD_SendData(0x55);
+        LCD_SendCommand(0x36); LCD_SendData(0x00);
+        LCD_SendCommand(0x29);
+    } else if (strcmp(controller, "ILI9486") == 0) {
+        LCD_SendCommand(0x11); delay_100ms();
+        LCD_SendCommand(0x3A); LCD_SendData(0x55);
+        LCD_SendCommand(0x36); LCD_SendData(0x28);
+        LCD_SendCommand(0x29);
+    }
+
     LCD_SendCommand(0x35); // تمكين TE Signal
     LCD_SendData(0x00);
 }
@@ -116,10 +135,12 @@ bool Wait_For_TE_Signal() {
 // ملء الشاشة باللون الأحمر
 void Fill_Screen_Red() {
     LCD_SendCommand(0x2C);
+    digitalWrite(CS_PIN, LOW);
     for (uint32_t i = 0; i < (320 * 480); i++) {
-        SPI.transfer(0xF8);
-        SPI.transfer(0x00);
+        sendSPI9(0x1F0); // Red High Byte
+        sendSPI9(0x100); // Red Low Byte
     }
+    digitalWrite(CS_PIN, HIGH);
 }
 
 // اختيار المتحكمات عبر Serial Monitor
@@ -129,35 +150,23 @@ void SelectControllers() {
         Serial.print(i);
         Serial.print(": ");
         Serial.println(controllers[i]);
-        enabledControllers[i] = false; // تعطيل جميع المتحكمات في البداية
+        enabledControllers[i] = false;
     }
 
-    Serial.println("\n✍️ أدخل أرقام المتحكمات التي تريد اختبارها، مفصولة بمسافات (مثلاً: 0 1 3):");
-    while (!Serial.available()) {} // انتظار الإدخال من المستخدم
+    Serial.println("\n✍️ أدخل أرقام المتحكمات التي تريد اختبارها:");
+    while (!Serial.available()) {}
 
-    String input = Serial.readStringUntil('\n'); // قراءة الإدخال
+    String input = Serial.readStringUntil('\n');
     input.trim();
 
     char* token = strtok((char*)input.c_str(), " ");
     while (token != NULL) {
         int index = atoi(token);
         if (index >= 0 && index < sizeof(controllers) / sizeof(controllers[0])) {
-            enabledControllers[index] = true; // تفعيل المتحكم المحدد
+            enabledControllers[index] = true;
         }
         token = strtok(NULL, " ");
     }
-
-    Serial.println("\n✅ المتحكمات المفعلة:");
-    total_attempts = 0;
-    for (int i = 0; i < sizeof(controllers) / sizeof(controllers[0]); i++) {
-        if (enabledControllers[i]) {
-            Serial.println(controllers[i]);
-            total_attempts += 6 * 5 * 4 * 3 * 2; // حساب عدد المحاولات لكل متحكم
-        }
-    }
-
-    Serial.print("🔢 إجمالي المحاولات: ");
-    Serial.println(total_attempts);
 }
 
 // تجربة جميع التوصيلات الممكنة
@@ -175,54 +184,41 @@ void Find_Correct_Pins() {
                 if (s == m) continue;
                 for (int d = 0; d < 6; d++) {
                     if (d == m || d == s) continue;
-                    for (int r = 0; r < 6; r++) {
-                        if (r == m || r == s || r == d) continue;
-                        for (int t = 0; t < 6; t++) {
-                            if (t == m || t == s || t == d || t == r) continue;
-
-                            current_attempt++;
-                            int remaining_attempts = total_attempts - current_attempt;
+                    for (int cs = 0; cs < 6; cs++) {
+                        if (cs == m || cs == s || cs == d) continue;
+                        for (int r = 0; r < 6; r++) {
+                            if (r == m || r == s || r == d || r == cs) continue;
 
                             MOSI_PIN = pins[m];
                             SCK_PIN = pins[s];
                             DC_PIN = pins[d];
+                            CS_PIN = pins[cs];
                             RESET_PIN = pins[r];
-                            TE_PIN = pins[t];
 
                             Serial.println("🔍 تجربة التوصيل:");
-                            Serial.print("📌 محاولة ");
-                            Serial.print(current_attempt);
-                            Serial.print(" من ");
-                            Serial.println(total_attempts);
-                            Serial.print("🟡 المحاولات المتبقية: ");
-                            Serial.println(remaining_attempts);
                             Serial.print("MOSI=");
                             Serial.print(pinNames[m]);
                             Serial.print(", SCK=");
                             Serial.print(pinNames[s]);
                             Serial.print(", DC=");
                             Serial.print(pinNames[d]);
+                            Serial.print(", CS=");
+                            Serial.print(pinNames[cs]);
                             Serial.print(", RESET=");
-                            Serial.print(pinNames[r]);
-                            Serial.print(", TE=");
-                            Serial.println(pinNames[t]);
+                            Serial.println(pinNames[r]);
 
                             SPI.begin();
                             pinMode(MOSI_PIN, OUTPUT);
                             pinMode(SCK_PIN, OUTPUT);
                             pinMode(DC_PIN, OUTPUT);
+                            pinMode(CS_PIN, OUTPUT);
                             pinMode(RESET_PIN, OUTPUT);
-                            pinMode(TE_PIN, INPUT);
-
-                            attachInterrupt(digitalPinToInterrupt(TE_PIN), TE_ISR, RISING);
 
                             LCD_Init(controllers[c]);
                             if (Wait_For_TE_Signal()) {
                                 Serial.println("✅ تم العثور على التوصيل الصحيح!");
                                 Fill_Screen_Red();
                             }
-
-                            detachInterrupt(digitalPinToInterrupt(TE_PIN));
                         }
                     }
                 }
@@ -233,11 +229,11 @@ void Find_Correct_Pins() {
 
 void setup() {
     Serial.begin(115200);
-    delay(2000);
+    delay_100ms();
     SelectControllers();
     Find_Correct_Pins();
 }
 
 void loop() {
-    delay(1000);
+    delay_100ms();
 }
