@@ -1,13 +1,13 @@
-#include <SPI.h>  // تضمين مكتبة SPI لاستخدام بروتوكول الاتصال
+#include <SPI.h>  // Include SPI library
 
-// تعريف المنافذ الممكنة لاستخدامها مع الشاشة
-const int pins[] = {PA1, PA2, PA3, PA4, PA5, PA7};  
+// Define possible pin configurations
+const int pins[] = {PA1, PA2, PA3, PA4, PA5, PA7};
 const char* pinNames[] = {"PA1", "PA2", "PA3", "PA4", "PA5", "PA7"};
 
-// إعداد سرعة SPI إلى 27 ميجاهرتز
+// SPI speed: 27 MHz, MSB First, SPI Mode 0
 SPISettings spiSettings(27000000, MSBFIRST, SPI_MODE0);
 
-// قائمة متحكمات الشاشات مع إمكانية تفعيل أو تعطيل كل منها
+// List of display controllers
 const char* controllers[] = {
     "ILI9341",   // دقة 240×320، شائع جدًا، يدعم SPI و 8080
     "ST7735",    // دقة 128×160، مناسب للشاشات الصغيرة
@@ -45,36 +45,38 @@ const char* controllers[] = {
     "SSD1331",   // شاشة OLED، دقة 96×64، تدعم SPI
     "SSD1351"    // شاشة OLED، دقة 128×128، ألوان جميلة جدًا
 };
-
-// مصفوفة لتحديد المتحكمات التي سيتم تجربتها
 bool enabledControllers[sizeof(controllers) / sizeof(controllers[0])];
 
-// متغيرات لحفظ المنافذ المستخدمة
-int MOSI_PIN, SCK_PIN, DC_PIN, RESET_PIN, TE_PIN;
-volatile bool TE_Flag = false;  // متغير لحفظ حالة TE Signal
+// Variables for pin assignment
+int MOSI_PIN, SCK_PIN, DC_PIN, CS_PIN, RESET_PIN, TE_PIN;
+volatile bool TE_Flag = false;
 
-// دالة المقاطعة لتحديث TE_Flag عند استقبال TE Signal
+// Interrupt handler for TE signal
 void TE_ISR() {
     TE_Flag = true;
 }
 
-// دالة لإرسال الأوامر إلى الشاشة
+// Function to send 9-bit SPI data
+void sendSPI9(uint16_t data) {
+    while (!(SPI1->SR & SPI_SR_TXE));  // Wait for SPI ready
+    SPI1->DR = data & 0x01FF;  // Send only 9-bit data within 16-bit register
+}
+
+// Send command (9-bit: DC=0)
 void LCD_SendCommand(uint8_t cmd) {
-    SPI.beginTransaction(spiSettings);
-    digitalWrite(DC_PIN, LOW); // وضع DC في وضع الأوامر
-    SPI.transfer(cmd);
-    SPI.endTransaction();
+    digitalWrite(CS_PIN, LOW);
+    sendSPI9(cmd & 0xFF);  // DC = 0 (Command)
+    digitalWrite(CS_PIN, HIGH);
 }
 
-// دالة لإرسال البيانات إلى الشاشة
+// Send data (9-bit: DC=1)
 void LCD_SendData(uint8_t data) {
-    SPI.beginTransaction(spiSettings);
-    digitalWrite(DC_PIN, HIGH); // وضع DC في وضع البيانات
-    SPI.transfer(data);
-    SPI.endTransaction();
+    digitalWrite(CS_PIN, LOW);
+    sendSPI9(0x100 | (data & 0xFF));  // DC = 1 (Data)
+    digitalWrite(CS_PIN, HIGH);
 }
 
-// دالة إعادة تشغيل الشاشة
+// Reset the LCD
 void LCD_Reset() {
     digitalWrite(RESET_PIN, LOW);
     delay(100);
@@ -82,14 +84,28 @@ void LCD_Reset() {
     delay(100);
 }
 
-// دالة لتهيئة الشاشة وتفعيل TE Signal
+// Initialize LCD Controller
 void LCD_Init(const char* controller) {
     LCD_Reset();
-    LCD_SendCommand(0x35);  // تفعيل TE Signal
+
+    if (strcmp(controller, "ILI9341") == 0) {
+        LCD_SendCommand(0x11); delay(120);  // Sleep Out
+        LCD_SendCommand(0x3A); LCD_SendData(0x55);  // 16-bit color
+        LCD_SendCommand(0x36); LCD_SendData(0x48);
+        LCD_SendCommand(0x29);  // Display ON
+    } 
+    else if (strcmp(controller, "ST7789V3") == 0) {
+        LCD_SendCommand(0x11); delay(120);
+        LCD_SendCommand(0x3A); LCD_SendData(0x55);
+        LCD_SendCommand(0x36); LCD_SendData(0x00);
+        LCD_SendCommand(0x29);
+    }
+
+    LCD_SendCommand(0x35);  // Enable TE signal
     LCD_SendData(0x00);
 }
 
-// دالة لانتظار TE Signal حتى يتم تحديث الشاشة بشكل متزامن
+// Wait for TE signal before refreshing the screen
 bool Wait_For_TE_Signal() {
     TE_Flag = false;
     unsigned long timeout = millis() + 2000;
@@ -99,41 +115,43 @@ bool Wait_For_TE_Signal() {
     return false;
 }
 
-// دالة لملء الشاشة باللون الأحمر
+// Fill screen with red using 9-bit SPI
 void Fill_Screen_Red() {
     LCD_SendCommand(0x2C);
+    digitalWrite(CS_PIN, LOW);
     for (int i = 0; i < (320 * 480); i++) {
-        SPI.transfer(0xF8);
-        SPI.transfer(0x00);
+        sendSPI9(0x1F0);  // Red High Byte
+        sendSPI9(0x100);  // Red Low Byte
     }
+    digitalWrite(CS_PIN, HIGH);
 }
 
-// دالة لاختيار المتحكمات عبر Serial Monitor
+// Select controllers via Serial Monitor
 void SelectControllers() {
-    Serial.println("🔹 قائمة المتحكمات المتاحة:");
+    Serial.println("🔹 Available Controllers:");
     for (int i = 0; i < sizeof(controllers) / sizeof(controllers[0]); i++) {
         Serial.print(i);
         Serial.print(": ");
         Serial.println(controllers[i]);
-        enabledControllers[i] = false; // تعطيل جميع المتحكمات في البداية
+        enabledControllers[i] = false;
     }
 
-    Serial.println("\n✍️ أدخل أرقام المتحكمات المراد تجربتها (مثال: 0 2 4):");
-    while (!Serial.available());  // انتظار الإدخال من Serial Monitor
+    Serial.println("\n✍️ Enter controller numbers (e.g., 0 2 4):");
+    while (!Serial.available());
 
-    String input = Serial.readStringUntil('\n'); // قراءة الإدخال
-    input.trim();  // إزالة أي مسافات زائدة
+    String input = Serial.readStringUntil('\n');
+    input.trim();
 
-    char* token = strtok((char*)input.c_str(), " ");  // تقسيم النص
+    char* token = strtok((char*)input.c_str(), " ");
     while (token != NULL) {
-        int index = atoi(token);  // تحويل النص إلى رقم
+        int index = atoi(token);
         if (index >= 0 && index < sizeof(controllers) / sizeof(controllers[0])) {
-            enabledControllers[index] = true;  // تفعيل المتحكم المحدد
+            enabledControllers[index] = true;
         }
         token = strtok(NULL, " ");
     }
 
-    Serial.println("\n✅ المتحكمات المفعلة:");
+    Serial.println("\n✅ Enabled Controllers:");
     for (int i = 0; i < sizeof(controllers) / sizeof(controllers[0]); i++) {
         if (enabledControllers[i]) {
             Serial.println(controllers[i]);
@@ -141,12 +159,12 @@ void SelectControllers() {
     }
 }
 
-// دالة لتجربة جميع التوصيلات الممكنة للمتحكمات المحددة
+// Try different pin combinations
 void Find_Correct_Pins() {
     for (int c = 0; c < sizeof(controllers) / sizeof(controllers[0]); c++) {
-        if (!enabledControllers[c]) continue;  // تجاهل المتحكمات غير المفعلة
+        if (!enabledControllers[c]) continue;
 
-        Serial.print("🖥️ تجربة معالج الشاشة: ");
+        Serial.print("🖥️ Testing: ");
         Serial.println(controllers[c]);
 
         for (int m = 0; m < 6; m++) {
@@ -154,48 +172,45 @@ void Find_Correct_Pins() {
                 if (s == m) continue;
                 for (int d = 0; d < 6; d++) {
                     if (d == m || d == s) continue;
-                    for (int r = 0; r < 6; r++) {
-                        if (r == m || r == s || r == d) continue;
-                        for (int t = 0; t < 6; t++) {
-                            if (t == m || t == s || t == d || t == r) continue;
+                    for (int cs = 0; cs < 6; cs++) {
+                        if (cs == m || cs == s || cs == d) continue;
+                        for (int r = 0; r < 6; r++) {
+                            if (r == m || r == s || r == d || r == cs) continue;
+                            for (int t = 0; t < 6; t++) {
+                                if (t == m || t == s || t == d || t == r || t == cs) continue;
 
-                            // تحديد المنافذ الحالية
-                            MOSI_PIN = pins[m];
-                            SCK_PIN = pins[s];
-                            DC_PIN = pins[d];
-                            RESET_PIN = pins[r];
-                            TE_PIN = pins[t];
+                                MOSI_PIN = pins[m];
+                                SCK_PIN = pins[s];
+                                DC_PIN = pins[d];
+                                CS_PIN = pins[cs];
+                                RESET_PIN = pins[r];
+                                TE_PIN = pins[t];
 
-                            // طباعة تفاصيل التجربة الحالية
-                            Serial.print("MOSI=");
-                            Serial.print(pinNames[m]);
-                            Serial.print(", SCK=");
-                            Serial.print(pinNames[s]);
-                            Serial.print(", DC=");
-                            Serial.print(pinNames[d]);
-                            Serial.print(", RESET=");
-                            Serial.print(pinNames[r]);
-                            Serial.print(", TE=");
-                            Serial.println(pinNames[t]);
+                                Serial.print("MOSI="); Serial.print(pinNames[m]);
+                                Serial.print(", SCK="); Serial.print(pinNames[s]);
+                                Serial.print(", DC="); Serial.print(pinNames[d]);
+                                Serial.print(", CS="); Serial.print(pinNames[cs]);
+                                Serial.print(", RESET="); Serial.print(pinNames[r]);
+                                Serial.print(", TE="); Serial.println(pinNames[t]);
 
-                            // تهيئة المنافذ
-                            SPI.begin();
-                            pinMode(MOSI_PIN, OUTPUT);
-                            pinMode(SCK_PIN, OUTPUT);
-                            pinMode(DC_PIN, OUTPUT);
-                            pinMode(RESET_PIN, OUTPUT);
-                            pinMode(TE_PIN, INPUT);
+                                SPI.begin();
+                                pinMode(MOSI_PIN, OUTPUT);
+                                pinMode(SCK_PIN, OUTPUT);
+                                pinMode(DC_PIN, OUTPUT);
+                                pinMode(CS_PIN, OUTPUT);
+                                pinMode(RESET_PIN, OUTPUT);
+                                pinMode(TE_PIN, INPUT);
 
-                            attachInterrupt(digitalPinToInterrupt(TE_PIN), TE_ISR, RISING);
+                                attachInterrupt(digitalPinToInterrupt(TE_PIN), TE_ISR, RISING);
 
-                            // تهيئة الشاشة وتجربة التوصيل
-                            LCD_Init(controllers[c]);
-                            if (Wait_For_TE_Signal()) {
-                                Serial.println("✅ تم العثور على التوصيل الصحيح!");
-                                Fill_Screen_Red();
+                                LCD_Init(controllers[c]);
+                                if (Wait_For_TE_Signal()) {
+                                    Serial.println("✅ Correct Configuration Found!");
+                                    Fill_Screen_Red();
+                                }
+
+                                detachInterrupt(digitalPinToInterrupt(TE_PIN));
                             }
-
-                            detachInterrupt(digitalPinToInterrupt(TE_PIN));
                         }
                     }
                 }
@@ -204,15 +219,15 @@ void Find_Correct_Pins() {
     }
 }
 
-// الدالة الرئيسية للتشغيل
+// Setup function
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    SelectControllers();  // السماح للمستخدم بتحديد المتحكمات
-    Find_Correct_Pins();  // بدء تجربة التوصيلات
+    SelectControllers();
+    Find_Correct_Pins();
 }
 
-// الدالة الرئيسية للتكرار (غير مستخدمة حاليًا)
+// Loop function (not used)
 void loop() {
     delay(1000);
 }
